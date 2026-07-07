@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { computeLaneRateSuggestion } from "./rateQuote";
 
 export interface OutreachFacts {
   accountName: string;
@@ -16,6 +17,7 @@ export interface OutreachFacts {
   lastOutreachAt: Date | null;
   hasRepliedBefore: boolean;
   sourceIsDocument: boolean;
+  suggestedRateText: string | null;
 }
 
 export interface SenderProfile {
@@ -65,6 +67,11 @@ export async function gatherFacts(
   });
   const priorReplies = await prisma.reply.count({ where: { accountId } });
 
+  const rateSuggestion = laneId ? await computeLaneRateSuggestion(laneId) : null;
+  const suggestedRateText = rateSuggestion
+    ? `$${rateSuggestion.suggestedLinehaul.toLocaleString()} (${rateSuggestion.basis})`
+    : null;
+
   return {
     accountName: account.name,
     accountType: account.type,
@@ -81,5 +88,6 @@ export async function gatherFacts(
     lastOutreachAt: priorMessages[0]?.createdAt ?? null,
     hasRepliedBefore: priorReplies > 0,
     sourceIsDocument: account.source === "Uploaded document",
+    suggestedRateText,
   };
 }

@@ -17,7 +17,7 @@ const SENIORITY_TIERS: { pattern: RegExp; weight: number }[] = [
   { pattern: /\bcoordinator\b|\bspecialist\b|\banalyst\b/i, weight: 20 },
 ];
 
-const DOMAIN_RELEVANCE_KEYWORDS =
+export const DOMAIN_RELEVANCE_KEYWORDS =
   /(logistic|shipping|supply chain|transport|traffic|distribution|fleet|warehouse|procurement|import|export|freight|dispatch)/i;
 
 export interface DecisionMakerScore {

@@ -14,6 +14,8 @@ export function getIntegrationStatus() {
     apolloEnrichment: Boolean(process.env.APOLLO_API_KEY),
     slackAlerts: Boolean(process.env.SLACK_WEBHOOK_URL),
     smsAlerts: Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM_NUMBER && process.env.ALERT_PHONE_NUMBER),
+    smsToContact: Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM_NUMBER),
+    llmSentiment: Boolean(process.env.ANTHROPIC_API_KEY),
     cronProtected: Boolean(process.env.CRON_SECRET),
   };
 }

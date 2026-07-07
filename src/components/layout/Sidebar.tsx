@@ -15,6 +15,7 @@ import {
   Settings,
   Truck,
   Inbox,
+  Compass,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +23,7 @@ const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/uploads", label: "Uploads", icon: Upload },
   { href: "/accounts", label: "Accounts", icon: Building2 },
+  { href: "/prospecting", label: "Prospecting", icon: Compass },
   { href: "/contacts", label: "Contacts", icon: Users },
   { href: "/lanes", label: "Lanes", icon: Route },
   { href: "/outreach", label: "Outreach", icon: Send },

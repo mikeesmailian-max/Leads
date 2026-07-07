@@ -12,7 +12,9 @@ import { getDuplicateCandidates } from "@/lib/actions/accounts";
 import { formatDate, relativeTime, money } from "@/lib/utils";
 import { Globe, MapPin, Truck, Send, FileText, Pencil, ShieldCheck } from "lucide-react";
 import { EnrichButton } from "@/components/accounts/EnrichButton";
+import { HiringSignalButton } from "@/components/accounts/HiringSignalButton";
 import { getIntegrationStatus } from "@/lib/integrations/status";
+import { Briefcase } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +70,11 @@ export default async function AccountDetailPage({ params }: { params: { id: stri
               </span>
             )}
             <span>First seen {formatDate(account.firstSeenAt)}</span>
+            {account.hiringSignalDetected && (
+              <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-400" title={account.hiringSignalDetail ?? undefined}>
+                <Briefcase className="h-3 w-3" /> Hiring signal
+              </span>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -105,7 +112,10 @@ export default async function AccountDetailPage({ params }: { params: { id: stri
           <Card>
             <CardHeader className="flex items-center justify-between">
               <CardTitle>Contacts ({account.contacts.length})</CardTitle>
-              <EnrichButton accountId={account.id} hasDomain={Boolean(account.domain)} apolloConfigured={integrations.apolloEnrichment} />
+              <div className="flex items-center gap-2">
+                <EnrichButton accountId={account.id} hasDomain={Boolean(account.domain)} apolloConfigured={integrations.apolloEnrichment} />
+                <HiringSignalButton accountId={account.id} hasApolloOrgId={Boolean(account.apolloOrgId)} apolloConfigured={integrations.apolloEnrichment} />
+              </div>
             </CardHeader>
             <CardBody className="space-y-2">
               {account.contacts.length === 0 && <p className="text-sm text-slate-400">No contacts found yet.</p>}

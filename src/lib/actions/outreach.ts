@@ -8,7 +8,9 @@ import { logActivity } from "@/lib/activity/log";
 import { onDraftGenerated, onDraftApproved, onOutreachSent } from "@/lib/tasks/autoTasks";
 import { sendMail } from "@/lib/email/sendMail";
 import { isSmtpConfigured } from "@/lib/email/config";
+import { sendSmsToContact } from "@/lib/alerts/sms";
 import { revalidatePath } from "next/cache";
+import type { MessageChannel } from "@prisma/client";
 
 export async function generateDraftsAction(input: { accountId: string; contactId?: string | null; laneId?: string | null; style: Style }) {
   const user = await requireUser();
@@ -58,26 +60,45 @@ export async function archiveDraftAction(id: string) {
  * for reply threading. If not configured, it falls back to the v1 behavior
  * of just logging the message as sent (for manual copy/paste sending).
  */
-export async function sendDraftAction(id: string) {
+export async function sendDraftAction(id: string, channel: MessageChannel = "EMAIL") {
   const user = await requireUser();
   const draft = await prisma.outreachDraft.findUniqueOrThrow({ where: { id } });
 
-  let recipientEmail: string | null = null;
-  if (draft.contactId) {
-    const contact = await prisma.contact.findUnique({ where: { id: draft.contactId } });
-    recipientEmail = contact?.email ?? null;
-  }
+  const contact = draft.contactId ? await prisma.contact.findUnique({ where: { id: draft.contactId } }) : null;
 
   let sendResult: { ok: boolean; messageId?: string; error?: string } = { ok: false, error: "SMTP not configured" };
-  if (isSmtpConfigured() && recipientEmail) {
-    sendResult = await sendMail({ to: recipientEmail, subject: draft.subject, body: draft.body });
+  let attemptedRealSend = false;
+
+  // Multi-channel outreach (recommendation #9): SMS sends for real via
+  // Twilio. LinkedIn has no legitimate send API without a partner
+  // agreement, so it stays a draft the rep copies and sends by hand —
+  // same "manual send" pattern email already falls back to when SMTP
+  // isn't configured.
+  if (channel === "SMS") {
+    attemptedRealSend = true;
+    if (!contact?.phone) {
+      sendResult = { ok: false, error: "Contact has no phone number on file" };
+    } else {
+      sendResult = await sendSmsToContact(contact.phone, `${draft.subject}
+
+${draft.body}`);
+    }
+  } else if (channel === "LINKEDIN") {
+    attemptedRealSend = false; // no automated send path exists — always manual
+    sendResult = { ok: false, error: "LinkedIn sending is manual — copy the message and send it yourself" };
+  } else {
+    const recipientEmail = contact?.email ?? null;
+    if (isSmtpConfigured() && recipientEmail) {
+      attemptedRealSend = true;
+      sendResult = await sendMail({ to: recipientEmail, subject: draft.subject, body: draft.body });
+    }
   }
 
-  // A real send attempt that actually failed (e.g. SMTP auth error) is
-  // recorded as FAILED rather than silently claiming success. When SMTP
-  // just isn't configured at all, we keep the v1 manual-send behavior
-  // (log it as sent — the human is doing the actual sending by hand).
-  const attemptedRealSend = isSmtpConfigured() && Boolean(recipientEmail);
+  // A real send attempt that actually failed (e.g. SMTP/Twilio auth error)
+  // is recorded as FAILED rather than silently claiming success. When a
+  // channel isn't configured (or is LinkedIn, which is always manual), we
+  // keep the v1 manual-send behavior — log it as sent, the human is doing
+  // the actual sending by hand.
   const messageStatus: "SENT" | "FAILED" = attemptedRealSend && !sendResult.ok ? "FAILED" : "SENT";
 
   const thread = await prisma.emailThread.create({
@@ -93,6 +114,7 @@ export async function sendDraftAction(id: string) {
       subject: draft.subject,
       body: draft.body,
       status: messageStatus,
+      channel,
       sentAt: messageStatus === "SENT" ? new Date() : null,
       messageId: sendResult.messageId ?? null,
       errorMessage: attemptedRealSend && !sendResult.ok ? sendResult.error ?? null : null,
@@ -104,7 +126,7 @@ export async function sendDraftAction(id: string) {
     // send attempt failed — surface it back to the rep instead.
     revalidatePath(`/outreach/${id}`);
     revalidatePath("/outreach");
-    throw new Error(`Send failed: ${sendResult.error ?? "unknown SMTP error"}`);
+    throw new Error(`Send failed: ${sendResult.error ?? "unknown error"}`);
   }
 
   await prisma.outreachDraft.update({ where: { id }, data: { status: "SENT" } });

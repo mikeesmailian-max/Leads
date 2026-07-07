@@ -92,7 +92,9 @@ function bodyFor(style: Style, length: Length, facts: OutreachFacts, profile: Se
       opening = `Thanks for pointing me in the right direction — could you let me know who handles carrier/broker relationships for transportation at ${facts.accountName}, or loop them in here?`;
       break;
     case "QUOTE_RESPONSE":
-      opening = `Appreciate you sending details over. Here's what we can put together${facts.laneLabel ? ` for ${facts.laneLabel}` : ""} — let me know if the numbers work or if you need adjustments.`;
+      opening = facts.suggestedRateText
+        ? `Appreciate you sending details over. Based on recent loads${facts.laneLabel ? ` on ${facts.laneLabel}` : ""}, we're looking at roughly ${facts.suggestedRateText} — happy to firm this up once we have full pickup/delivery details.`
+        : `Appreciate you sending details over. Here's what we can put together${facts.laneLabel ? ` for ${facts.laneLabel}` : ""} — let me know if the numbers work or if you need adjustments.`;
       break;
     case "RE_ENGAGEMENT":
       opening = `It's been a while since we last connected — wanted to check if ${facts.accountName} still has freight moving on lanes we could help cover.`;

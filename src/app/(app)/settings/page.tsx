@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { Card, CardHeader, CardTitle, CardBody } from "@/components/ui/Card";
 import { SenderProfileForm } from "@/components/settings/SenderProfileForm";
 import { ScoringWeightsForm } from "@/components/settings/ScoringWeightsForm";
+import { ScoringRecalibrationPanel } from "@/components/settings/ScoringRecalibrationPanel";
 import { UserManager } from "@/components/settings/UserManager";
 import { TagManager } from "@/components/settings/TagManager";
 import { getSenderProfile } from "@/lib/outreach/facts";
@@ -49,6 +50,8 @@ export default async function SettingsPage() {
     { label: "Contact enrichment — Apollo.io", configured: integrations.apolloEnrichment, hint: "APOLLO_API_KEY" },
     { label: "Slack daily digest", configured: integrations.slackAlerts, hint: "SLACK_WEBHOOK_URL" },
     { label: "SMS daily digest — Twilio", configured: integrations.smsAlerts, hint: "TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER, ALERT_PHONE_NUMBER" },
+    { label: "SMS-to-contact sending (multi-channel outreach)", configured: integrations.smsToContact, hint: "TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER" },
+    { label: "Reply sentiment upgrade (LLM classification)", configured: integrations.llmSentiment, hint: "ANTHROPIC_API_KEY" },
     { label: "Cron routes protected", configured: integrations.cronProtected, hint: "CRON_SECRET" },
   ];
 
@@ -75,6 +78,15 @@ export default async function SettingsPage() {
           </CardHeader>
           <CardBody>
             <ScoringWeightsForm initial={scoringWeights} />
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Win/Loss Scoring Recalibration</CardTitle>
+          </CardHeader>
+          <CardBody>
+            <ScoringRecalibrationPanel />
           </CardBody>
         </Card>
 

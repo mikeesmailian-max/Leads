@@ -6,6 +6,8 @@ import { StageChip } from "@/components/ui/StatusChip";
 import { SuggestedAngleEditor } from "@/components/lanes/SuggestedAngleEditor";
 import { NoteForm } from "@/components/notes/NoteForm";
 import { Timeline } from "@/components/timeline/Timeline";
+import { LaneOverlapPanel } from "@/components/prospecting/LaneOverlapPanel";
+import { getIntegrationStatus } from "@/lib/integrations/status";
 import { FileText } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +24,7 @@ export default async function LaneDetailPage({ params }: { params: { id: string 
     },
   });
   if (!lane) notFound();
+  const integrations = getIntegrationStatus();
 
   const activities = await prisma.activity.findMany({ where: { laneId: lane.id }, include: { actor: true }, orderBy: { createdAt: "desc" }, take: 40 });
   const timelineEntries = [
@@ -62,6 +65,15 @@ export default async function LaneDetailPage({ params }: { params: { id: string 
                   <span className="text-xs text-slate-400">{account.type}</span>
                 </Link>
               ))}
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Prospects on this Lane</CardTitle>
+            </CardHeader>
+            <CardBody>
+              <LaneOverlapPanel laneId={lane.id} apolloConfigured={integrations.apolloEnrichment} />
             </CardBody>
           </Card>
 

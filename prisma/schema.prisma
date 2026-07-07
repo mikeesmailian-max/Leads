@@ -197,6 +197,28 @@ enum ActivityType {
   NOTE_ADDED
   ACCOUNT_ENRICHED
   INBOX_INGESTED
+  ACCOUNT_SOURCED
+  BULK_IMPORTED
+  SCORING_RECALIBRATED
+}
+
+enum ImportSourceType {
+  COMPETITOR_CUSTOMERS
+  DIRECTORY
+  OTHER
+}
+
+enum MessageChannel {
+  EMAIL
+  SMS
+  LINKEDIN
+}
+
+enum SentimentTier {
+  HOT
+  WARM
+  NEUTRAL
+  COLD
 }
 
 // ----------------------------------------------------------------------------
@@ -213,16 +235,18 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  ownedAccounts      Account[]       @relation("AccountOwner")
-  ownedContacts      Contact[]       @relation("ContactOwner")
-  ownedOpportunities Opportunity[]   @relation("OpportunityOwner")
-  ownedTasks         Task[]          @relation("TaskOwner")
-  uploadedDocuments  Document[]      @relation("DocumentUploader")
-  notes              Note[]          @relation("NoteAuthor")
-  activities         Activity[]      @relation("ActivityActor")
-  stageChanges       StageHistory[]  @relation("StageChanger")
-  draftsCreated      OutreachDraft[] @relation("DraftCreator")
-  repliesClassified  Reply[]         @relation("ReplyClassifier")
+  ownedAccounts      Account[]              @relation("AccountOwner")
+  ownedContacts      Contact[]              @relation("ContactOwner")
+  ownedOpportunities Opportunity[]          @relation("OpportunityOwner")
+  ownedTasks         Task[]                 @relation("TaskOwner")
+  uploadedDocuments  Document[]             @relation("DocumentUploader")
+  notes              Note[]                 @relation("NoteAuthor")
+  activities         Activity[]             @relation("ActivityActor")
+  stageChanges       StageHistory[]         @relation("StageChanger")
+  draftsCreated      OutreachDraft[]        @relation("DraftCreator")
+  repliesClassified  Reply[]                @relation("ReplyClassifier")
+  importBatches      ImportBatch[]          @relation("ImportBatchOwner")
+  scoringAdjustments ScoringAdjustmentLog[] @relation("ScoringAdjustmentCreator")
 
   @@index([email])
 }
@@ -232,26 +256,31 @@ model User {
 // ----------------------------------------------------------------------------
 
 model Account {
-  id               String         @id @default(cuid())
-  name             String
-  normalizedName   String
-  website          String?
-  domain           String?
-  type             AccountType    @default(PROSPECT)
-  industry         String?
-  region           String?
-  equipmentFocus   EquipmentType?
-  internalNotes    String?
-  source           String? // e.g. "Uploaded document", "Manual entry"
-  sourceDocumentId String?
-  pipelineStage    PipelineStage  @default(NEW_FROM_UPLOAD)
-  firstSeenAt      DateTime       @default(now())
-  lastActivityAt   DateTime       @default(now())
-  ownerId          String?
-  lastEnrichedAt   DateTime?
-  deletedAt        DateTime?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  id                    String         @id @default(cuid())
+  name                  String
+  normalizedName        String
+  website               String?
+  domain                String?
+  type                  AccountType    @default(PROSPECT)
+  industry              String?
+  region                String?
+  equipmentFocus        EquipmentType?
+  internalNotes         String?
+  source                String? // e.g. "Uploaded document", "Manual entry"
+  sourceDocumentId      String?
+  pipelineStage         PipelineStage  @default(NEW_FROM_UPLOAD)
+  firstSeenAt           DateTime       @default(now())
+  lastActivityAt        DateTime       @default(now())
+  ownerId               String?
+  lastEnrichedAt        DateTime?
+  apolloOrgId           String? // Apollo organization id, set by ICP sourcing/enrichment — enables hiring-signal lookups
+  hiringSignalDetected  Boolean        @default(false)
+  hiringSignalDetail    String? // e.g. "Hiring: Logistics Coordinator, Supply Chain Analyst"
+  hiringSignalCheckedAt DateTime?
+  importBatchId         String?
+  deletedAt             DateTime?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
 
   owner               User?             @relation("AccountOwner", fields: [ownerId], references: [id])
   sourceDocument      Document?         @relation("AccountSourceDocument", fields: [sourceDocumentId], references: [id])
@@ -272,6 +301,7 @@ model Account {
   parsesAsConsignee   DocumentParse[]   @relation("ParseConsigneeAccount")
   mergedFromAccounts  AccountMerge[]    @relation("MergeTargetAccount")
   mergedIntoAccountOf AccountMerge[]    @relation("MergeSourceAccount")
+  importBatch         ImportBatch?      @relation(fields: [importBatchId], references: [id])
 
   @@index([normalizedName])
   @@index([domain])
@@ -618,6 +648,7 @@ model OutreachMessage {
   subject       String?
   body          String?
   status        MessageStatus    @default(DRAFT)
+  channel       MessageChannel   @default(EMAIL)
   sentAt        DateTime?
   messageId     String? // RFC Message-ID header, used to thread inbound replies
   errorMessage  String? // populated if a real SMTP send attempt failed
@@ -650,18 +681,20 @@ model EmailThread {
 }
 
 model Reply {
-  id                  String        @id @default(cuid())
+  id                  String         @id @default(cuid())
   emailThreadId       String?
   accountId           String?
   contactId           String?
   rawText             String
-  category            ReplyCategory @default(UNKNOWN)
+  category            ReplyCategory  @default(UNKNOWN)
   suggestedNextAction String?
-  receivedAt          DateTime      @default(now())
+  receivedAt          DateTime       @default(now())
   classifiedById      String?
   fromEmail           String? // sender address of the inbound message, when ingested automatically
-  externalMessageId   String?       @unique // inbound email's Message-ID header, prevents double-ingesting
-  createdAt           DateTime      @default(now())
+  externalMessageId   String?        @unique // inbound email's Message-ID header, prevents double-ingesting
+  sentimentTier       SentimentTier?
+  sentimentSource     String? // "heuristic" | "llm"
+  createdAt           DateTime       @default(now())
 
   emailThread  EmailThread? @relation(fields: [emailThreadId], references: [id])
   account      Account?     @relation(fields: [accountId], references: [id])
@@ -806,6 +839,34 @@ model ContactTag {
 // SETTINGS (key/value config: scoring weights, OCR settings, doc type defs,
 // task rules, signature templates, company profile)
 // ----------------------------------------------------------------------------
+
+model ImportBatch {
+  id           String           @id @default(cuid())
+  label        String
+  sourceType   ImportSourceType @default(OTHER)
+  importedById String?
+  rowsTotal    Int              @default(0)
+  rowsCreated  Int              @default(0)
+  rowsSkipped  Int              @default(0)
+  createdAt    DateTime         @default(now())
+
+  importedBy User?     @relation("ImportBatchOwner", fields: [importedById], references: [id])
+  accounts   Account[]
+}
+
+model ScoringAdjustmentLog {
+  id              String   @id @default(cuid())
+  previousWeights Json
+  newWeights      Json
+  wonSampleSize   Int
+  lostSampleSize  Int
+  applied         Boolean  @default(false)
+  notes           String?
+  createdById     String?
+  createdAt       DateTime @default(now())
+
+  createdBy User? @relation("ScoringAdjustmentCreator", fields: [createdById], references: [id])
+}
 
 model Setting {
   id        String   @id @default(cuid())

@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import type { SenderProfile } from "@/lib/outreach/facts";
 import type { ScoringWeights } from "@/lib/scoring/getWeights";
 import { DEFAULT_SCORING_WEIGHTS } from "@/lib/scoring/getWeights";
+import { computeSuggestedWeights, applyRecalibration, type RecalibrationSuggestion } from "@/lib/scoring/recalibrate";
 
 export async function updateSenderProfile(profile: SenderProfile) {
   await requireUser();
@@ -70,5 +71,17 @@ export async function deleteTag(id: string) {
   await prisma.accountTag.deleteMany({ where: { tagId: id } });
   await prisma.contactTag.deleteMany({ where: { tagId: id } });
   await prisma.tag.delete({ where: { id } });
+  revalidatePath("/settings");
+}
+
+
+export async function analyzeWinLossAction() {
+  await requireUser();
+  return computeSuggestedWeights();
+}
+
+export async function applyRecalibrationAction(suggestion: RecalibrationSuggestion) {
+  const user = await requireUser();
+  await applyRecalibration(suggestion, user.id);
   revalidatePath("/settings");
 }

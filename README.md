@@ -230,11 +230,93 @@ CRON_SECRET="replace-with-openssl-rand-hex-32"
 ```bash
 curl -H "Authorization: Bearer $CRON_SECRET" https://yourapp.com/api/cron/poll-inbox
 curl -H "Authorization: Bearer $CRON_SECRET" https://yourapp.com/api/cron/daily-digest
+curl -H "Authorization: Bearer $CRON_SECRET" https://yourapp.com/api/cron/icp-sourcing
+curl -H "Authorization: Bearer $CRON_SECRET" https://yourapp.com/api/cron/hiring-signals
+curl -H "Authorization: Bearer $CRON_SECRET" https://yourapp.com/api/cron/stale-deals
 ```
 
 Any scheduler works — Vercel Cron (`vercel.json`), an OS crontab running `curl`, GitHub
-Actions on a schedule, etc. Without `CRON_SECRET` set, both routes reject every request
+Actions on a schedule, etc. Without `CRON_SECRET` set, all routes reject every request
 (fails closed, not open).
+
+## The shipper-prospecting machine (outbound sourcing + inbound tightening)
+
+On top of the core rate-con → outreach → close workflow above, the app also actively
+finds new shippers to prospect and tightens the existing pipeline so nothing sits idle.
+Five features work outbound (finding new accounts); five work inbound (getting more out
+of accounts you already have). All ten are real, working logic — not mockups — and every
+one degrades gracefully (returns a clear "not configured" result, never throws) when its
+optional integration isn't set up.
+
+### Outbound: finding new shippers
+
+**1. ICP-based account sourcing.** Define your ideal customer profile (industries,
+locations, employee count range) on the `/prospecting` page, then click "Run sourcing
+now" to pull matching companies from Apollo's organization search
+(`src/lib/prospecting/icpSourcing.ts`). New matches are deduped against your existing
+accounts and created as fresh prospects at the `RESEARCHING` stage. Requires
+`APOLLO_API_KEY`. Can also run on a schedule via `/api/cron/icp-sourcing`.
+
+**2. Hiring-signal detection.** On any account page, click "Check hiring signal" to pull
+that company's recent job postings from Apollo and flag whether they're hiring for
+logistics/warehouse/supply-chain roles (`src/lib/prospecting/hiringSignals.ts`) — a
+practical proxy for "this company is growing and may need more freight capacity soon."
+Requires `APOLLO_API_KEY` and the account to have been sourced via Apollo (has an
+`apolloOrgId`). Can run in bulk on a schedule via `/api/cron/hiring-signals`.
+
+**3. Lane-overlap prospecting.** On any lane's detail page, click "Find prospects on
+this lane" to search Apollo for companies located in that lane's origin/destination
+cities — the idea being that shippers near a lane you already run are cheap
+incremental freight (`src/lib/prospecting/laneOverlap.ts`). One click adds any candidate
+as a new prospect linked to that lane.
+
+**4. Competitor customer bulk-import** and **5. Directory/association bulk-import.**
+*Honest scope note:* there is no reliable, ToS-compliant API for scraping a competitor's
+customer list or an association's member directory — so instead of faking that with
+brittle scraping, `/prospecting` has a bulk-import tool
+(`src/lib/prospecting/bulkImport.ts`): paste or type a list of company names (optionally
+with domain/city/state), tag it as "Competitor customers" or "Directory," and it dedupes
+against your CRM and creates the new ones as prospects. Same tool, two source labels —
+use it with whatever list you already have (a competitor's website customer logos, a
+trade association's public member list, a conference exhibitor list, etc.).
+
+### Inbound: getting more out of the pipeline you already have
+
+**6. Stale-deal auto-escalation.** Any account sitting in `RESEARCHING` or
+`CONTACT_FOUND` with no activity for 7+ days automatically gets a follow-up task created
+(priority scales with how stale it is), so leads don't quietly die from neglect
+(`src/lib/tasks/staleDeals.ts`). The dashboard's "Stale deals" work-queue card shows the
+current count. Runs automatically as replies/activity come in, and can also be swept in
+bulk via `/api/cron/stale-deals`.
+
+**7. Reply sentiment auto-triage.** Every inbound reply is tagged Hot/Warm/Neutral/Cold
+based on its category (interested/quote-request → Hot, not-interested/unsubscribe →
+Cold, etc.), and the `/replies` inbox is sorted hottest-first so you always work the
+most promising replies first (`src/lib/replies/sentiment.ts`). If the fast heuristic
+can't categorize a reply, it optionally falls back to an LLM classification call
+(requires `ANTHROPIC_API_KEY`) — otherwise it's simply left as Neutral, never guessed
+at silently.
+
+**8. Win/loss scoring feedback loop.** On the Settings page, "Analyze win/loss patterns"
+looks at your closed-won vs. closed-lost opportunities and computes which confidence-score
+factors actually correlated with winning (`src/lib/scoring/recalibrate.ts`). It shows you
+the suggested weight changes and why — you decide whether to apply them. Requires at
+least 3 won and 3 lost deals with a linked contact; otherwise it tells you plainly that
+there isn't enough closed data yet, rather than guessing.
+
+**9. Multi-channel outreach.** Drafts can now be sent by SMS (a real send via Twilio,
+requires `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`/`TWILIO_FROM_NUMBER` and the contact
+having a phone number) in addition to email. LinkedIn is offered too, but — since there's
+no legitimate API for sending LinkedIn messages on your behalf — it's draft-only: the
+message is copied to your clipboard for you to paste and send manually, then you confirm
+it was sent.
+
+**10. Instant quote-on-interest.** When a reply comes in tagged Interested or
+Quote Request, the app automatically drafts a quote response — and if there's enough
+recent rate-confirmation history on that lane (2+ prior loads), it fills in a real
+suggested linehaul number instead of generic language
+(`src/lib/outreach/rateQuote.ts`). Never fabricates a number: below the 2-load threshold,
+it falls back to the original non-numeric template.
 
 ### Still a known limitation (not addressed by the above)
 

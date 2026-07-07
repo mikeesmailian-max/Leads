@@ -77,7 +77,14 @@ export default async function DraftDetailPage({ params }: { params: { id: string
           <CardTitle>Draft</CardTitle>
         </CardHeader>
         <CardBody>
-          <DraftEditor draftId={draft.id} initialSubject={draft.subject} initialBody={draft.body} status={draft.status} />
+          <DraftEditor
+            draftId={draft.id}
+            initialSubject={draft.subject}
+            initialBody={draft.body}
+            status={draft.status}
+            contactPhone={draft.contact?.phone}
+            contactLinkedinUrl={draft.contact?.linkedinUrl}
+          />
         </CardBody>
       </Card>
 

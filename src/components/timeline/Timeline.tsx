@@ -12,6 +12,9 @@ import {
   ShieldCheck,
   Sparkles,
   Inbox,
+  Compass,
+  UploadCloud,
+  SlidersHorizontal,
 } from "lucide-react";
 import { relativeTime, formatDateTime } from "@/lib/utils";
 import type { ActivityType } from "@prisma/client";
@@ -35,6 +38,9 @@ const ICONS: Record<ActivityType, any> = {
   NOTE_ADDED: StickyNote,
   ACCOUNT_ENRICHED: Sparkles,
   INBOX_INGESTED: Inbox,
+  ACCOUNT_SOURCED: Compass,
+  BULK_IMPORTED: UploadCloud,
+  SCORING_RECALIBRATED: SlidersHorizontal,
 };
 
 export interface TimelineEntry {

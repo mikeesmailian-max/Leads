@@ -131,3 +131,16 @@ export function DraftStatusChip({ status }: { status: string }) {
 export function ReplyCategoryChip({ category }: { category: string }) {
   return <StatusChip label={category} tone={REPLY_CATEGORY_TONES[category] ?? "slate"} />;
 }
+
+const SENTIMENT_TONES: Record<string, ChipTone> = {
+  HOT: "red",
+  WARM: "amber",
+  NEUTRAL: "slate",
+  COLD: "blue",
+};
+
+/** Reply sentiment auto-triage badge (recommendation #7) — hot/warm/neutral/cold, so the hottest replies bubble up visually. */
+export function SentimentChip({ tier }: { tier: string | null | undefined }) {
+  if (!tier) return null;
+  return <StatusChip label={tier} tone={SENTIMENT_TONES[tier] ?? "slate"} dot />;
+}

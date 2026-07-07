@@ -30,6 +30,7 @@ export async function getDashboardData() {
     quoteRequestedCount,
     archivedDeadCount,
     topShipperGroups,
+    staleAccountsCount,
   ] = await Promise.all([
     prisma.document.count({ where: { needsReview: true, status: { not: "APPROVED" } } }),
     prisma.document.count({ where: { status: { in: ["PARSED", "APPROVED"] }, createdAt: { gte: todayStart } } }),
@@ -59,6 +60,13 @@ export async function getDashboardData() {
       where: { shipperAccountId: { not: null } },
       orderBy: { _count: { shipperAccountId: "desc" } },
       take: 5,
+    }),
+    prisma.account.count({
+      where: {
+        deletedAt: null,
+        pipelineStage: { in: ["RESEARCHING", "CONTACT_FOUND"] },
+        lastActivityAt: { lte: sevenDaysAgo },
+      },
     }),
   ]);
 
@@ -98,6 +106,7 @@ export async function getDashboardData() {
       repliedInterestedCount,
       quoteRequestedCount,
       archivedDeadCount,
+      staleAccountsCount,
     },
   };
 }
