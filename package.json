@@ -31,7 +31,12 @@
     "lucide-react": "0.400.0",
     "clsx": "2.1.1",
     "nanoid": "5.0.7",
-    "react-hot-toast": "2.4.1"
+    "react-hot-toast": "2.4.1",
+    "@aws-sdk/client-textract": "3.687.0",
+    "imapflow": "1.0.164",
+    "mailparser": "3.7.1",
+    "nodemailer": "7.0.13",
+    "twilio": "5.3.5"
   },
   "devDependencies": {
     "typescript": "5.5.4",
@@ -46,6 +51,8 @@
     "prisma": "5.22.0",
     "tsx": "4.16.5",
     "eslint": "8.57.0",
-    "eslint-config-next": "14.2.35"
+    "eslint-config-next": "14.2.35",
+    "@types/mailparser": "3.4.5",
+    "@types/nodemailer": "6.4.16"
   }
 }

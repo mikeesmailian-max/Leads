@@ -7,6 +7,8 @@ import { TagManager } from "@/components/settings/TagManager";
 import { getSenderProfile } from "@/lib/outreach/facts";
 import { getScoringWeights } from "@/lib/scoring/getWeights";
 import { NEEDS_REVIEW_THRESHOLD } from "@/lib/parser/rateConfirmationParser";
+import { getIntegrationStatus } from "@/lib/integrations/status";
+import { CheckCircle2, XCircle } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +41,16 @@ export default async function SettingsPage() {
     prisma.user.findMany({ orderBy: { createdAt: "asc" } }),
     prisma.tag.findMany({ orderBy: { name: "asc" } }),
   ]);
+  const integrations = getIntegrationStatus();
+  const INTEGRATION_ROWS: { label: string; configured: boolean; hint: string }[] = [
+    { label: "OCR — AWS Textract (scanned/photographed docs)", configured: integrations.ocrTextract, hint: "OCR_PROVIDER, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY" },
+    { label: "Email inbox ingestion (IMAP)", configured: integrations.emailInbox, hint: "IMAP_HOST, EMAIL_USER, EMAIL_PASSWORD" },
+    { label: "Outreach sending (SMTP)", configured: integrations.emailSend, hint: "SMTP_HOST, EMAIL_USER, EMAIL_PASSWORD" },
+    { label: "Contact enrichment — Apollo.io", configured: integrations.apolloEnrichment, hint: "APOLLO_API_KEY" },
+    { label: "Slack daily digest", configured: integrations.slackAlerts, hint: "SLACK_WEBHOOK_URL" },
+    { label: "SMS daily digest — Twilio", configured: integrations.smsAlerts, hint: "TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER, ALERT_PHONE_NUMBER" },
+    { label: "Cron routes protected", configured: integrations.cronProtected, hint: "CRON_SECRET" },
+  ];
 
   return (
     <div className="space-y-6">
@@ -90,12 +102,37 @@ export default async function SettingsPage() {
           </CardHeader>
           <CardBody className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
             <p>
-              v1 uses a dependency-free heuristic parser: PDFs with an embedded text layer are read directly; scanned images fall back to
-              manual entry. Documents below <strong>{Math.round(NEEDS_REVIEW_THRESHOLD * 100)}%</strong> confidence are flagged for review.
+              PDFs with an embedded text layer are read directly for free. Documents below <strong>{Math.round(NEEDS_REVIEW_THRESHOLD * 100)}%</strong> confidence
+              are flagged for review. Scanned/photographed documents route through AWS Textract when configured below.
             </p>
-            <p className="text-xs text-slate-400">
-              To wire up a real OCR vendor (Google Vision, AWS Textract, Azure Form Recognizer), set <code>OCR_PROVIDER</code> /{" "}
-              <code>OCR_API_KEY</code> in your environment and implement the vendor call in <code>src/lib/ocr/extractText.ts</code> — see the README.
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Integrations</CardTitle>
+          </CardHeader>
+          <CardBody className="space-y-2">
+            {INTEGRATION_ROWS.map((row) => (
+              <div key={row.label} className="flex items-start justify-between gap-3 text-sm">
+                <div>
+                  <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
+                    {row.configured ? (
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+                    ) : (
+                      <XCircle className="h-4 w-4 shrink-0 text-slate-300 dark:text-slate-600" />
+                    )}
+                    <span className="font-medium">{row.label}</span>
+                  </div>
+                  <p className="ml-5.5 text-xs text-slate-400">{row.hint}</p>
+                </div>
+                <span className={row.configured ? "text-xs font-medium text-emerald-600" : "text-xs text-slate-400"}>
+                  {row.configured ? "Configured" : "Not configured"}
+                </span>
+              </div>
+            ))}
+            <p className="pt-1 text-xs text-slate-400">
+              Set these in your <code>.env</code> file — see <code>.env.example</code> and the README for setup instructions for each.
             </p>
           </CardBody>
         </Card>

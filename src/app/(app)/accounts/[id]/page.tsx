@@ -10,7 +10,9 @@ import { NoteForm } from "@/components/notes/NoteForm";
 import { Timeline } from "@/components/timeline/Timeline";
 import { getDuplicateCandidates } from "@/lib/actions/accounts";
 import { formatDate, relativeTime, money } from "@/lib/utils";
-import { Globe, MapPin, Truck, Send, FileText, Pencil } from "lucide-react";
+import { Globe, MapPin, Truck, Send, FileText, Pencil, ShieldCheck } from "lucide-react";
+import { EnrichButton } from "@/components/accounts/EnrichButton";
+import { getIntegrationStatus } from "@/lib/integrations/status";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +36,7 @@ export default async function AccountDetailPage({ params }: { params: { id: stri
     prisma.activity.findMany({ where: { accountId: account.id }, include: { actor: true }, orderBy: { createdAt: "desc" }, take: 40 }),
     getDuplicateCandidates(account.id),
   ]);
+  const integrations = getIntegrationStatus();
 
   const timelineEntries = [
     ...activities.map((a) => ({ id: a.id, type: a.type, summary: a.summary, createdAt: a.createdAt, actorName: a.actor?.name })),
@@ -100,8 +103,9 @@ export default async function AccountDetailPage({ params }: { params: { id: stri
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex items-center justify-between">
               <CardTitle>Contacts ({account.contacts.length})</CardTitle>
+              <EnrichButton accountId={account.id} hasDomain={Boolean(account.domain)} apolloConfigured={integrations.apolloEnrichment} />
             </CardHeader>
             <CardBody className="space-y-2">
               {account.contacts.length === 0 && <p className="text-sm text-slate-400">No contacts found yet.</p>}
@@ -111,9 +115,14 @@ export default async function AccountDetailPage({ params }: { params: { id: stri
                   href={`/contacts/${c.id}`}
                   className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm hover:border-slate-300 dark:border-slate-800"
                 >
-                  <span>
+                  <span className="flex items-center gap-2">
                     <span className="font-medium text-slate-800 dark:text-slate-200">{c.fullName}</span>
-                    {c.title && <span className="ml-2 text-slate-400">{c.title}</span>}
+                    {c.title && <span className="text-slate-400">{c.title}</span>}
+                    {c.isDecisionMaker && (
+                      <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                        <ShieldCheck className="h-3 w-3" /> Decision-maker
+                      </span>
+                    )}
                   </span>
                   <span className="flex items-center gap-2">
                     <span className="text-xs text-slate-400">{Math.round(c.confidenceScore * 100)}%</span>

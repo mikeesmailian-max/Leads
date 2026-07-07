@@ -10,6 +10,8 @@ import {
   ArrowRightCircle,
   GitMerge,
   ShieldCheck,
+  Sparkles,
+  Inbox,
 } from "lucide-react";
 import { relativeTime, formatDateTime } from "@/lib/utils";
 import type { ActivityType } from "@prisma/client";
@@ -31,6 +33,8 @@ const ICONS: Record<ActivityType, any> = {
   REPLY_RECEIVED: MessageSquare,
   REPLY_CLASSIFIED: MessageSquare,
   NOTE_ADDED: StickyNote,
+  ACCOUNT_ENRICHED: Sparkles,
+  INBOX_INGESTED: Inbox,
 };
 
 export interface TimelineEntry {

@@ -195,6 +195,8 @@ enum ActivityType {
   REPLY_RECEIVED
   REPLY_CLASSIFIED
   NOTE_ADDED
+  ACCOUNT_ENRICHED
+  INBOX_INGESTED
 }
 
 // ----------------------------------------------------------------------------
@@ -246,6 +248,7 @@ model Account {
   firstSeenAt      DateTime       @default(now())
   lastActivityAt   DateTime       @default(now())
   ownerId          String?
+  lastEnrichedAt   DateTime?
   deletedAt        DateTime?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
@@ -494,12 +497,15 @@ model Contact {
   status             ContactStatus      @default(NEW)
   verificationStatus VerificationStatus @default(UNVERIFIED)
   outreachStatus     String? // free-form label for last outreach state
-  source             String? // "document", "manual", "inferred"
+  source             String? // "document", "manual", "inferred", "enrichment"
   sourceDocumentId   String?
   doNotContact       Boolean            @default(false)
   internalNotes      String?
   lastContactedAt    DateTime?
   ownerId            String?
+  isDecisionMaker    Boolean            @default(false)
+  enrichmentSource   String? // e.g. "apollo" — which enrichment provider found this contact
+  enrichedAt         DateTime?
   deletedAt          DateTime?
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
@@ -613,6 +619,8 @@ model OutreachMessage {
   body          String?
   status        MessageStatus    @default(DRAFT)
   sentAt        DateTime?
+  messageId     String? // RFC Message-ID header, used to thread inbound replies
+  errorMessage  String? // populated if a real SMTP send attempt failed
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
 
@@ -651,6 +659,8 @@ model Reply {
   suggestedNextAction String?
   receivedAt          DateTime      @default(now())
   classifiedById      String?
+  fromEmail           String? // sender address of the inbound message, when ingested automatically
+  externalMessageId   String?       @unique // inbound email's Message-ID header, prevents double-ingesting
   createdAt           DateTime      @default(now())
 
   emailThread  EmailThread? @relation(fields: [emailThreadId], references: [id])

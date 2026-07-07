@@ -127,27 +127,123 @@ Document, and OutreachDraft so nothing is destructively removed by day-to-day us
   e.g. approving a draft creates a send task, sending creates 2-day/5-day follow-ups, a
   reply cancels pending follow-ups, etc.
 
-## Where things plug in (Phase 2)
+## Optional integrations (all off by default, enable via `.env`)
 
-The app is built so these are additive, not rewrites:
+Every integration below degrades gracefully when unconfigured — the app runs exactly like
+v1 with none of these set. The Settings page has a live "Integrations" status card showing
+which of these are currently configured, so you don't have to go check `.env` by hand.
 
-- **Real OCR** (`src/lib/ocr/extractText.ts`): v1 reads the embedded text layer of
-  born-digital PDFs directly (no vendor needed) and flags scanned images for manual entry.
-  To add Google Cloud Vision / AWS Textract / Azure Form Recognizer / an LLM vision API,
-  implement the image branch in this one file — the return shape (`OcrResult`) and
-  everything downstream (parser, review UI) stays the same.
-- **Live email** (`src/lib/actions/outreach.ts` → `sendDraftAction`, and `src/app/(app)/replies`):
-  v1 records "sent" and lets you paste replies in for classification. To wire up Gmail/
-  Outlook/SMTP, replace the body of `sendDraftAction` with a real send call, and add a
-  webhook or polling job that creates `Reply` rows automatically instead of via paste.
-- **Contact enrichment / web research**: `src/lib/scoring/contactScoring.ts` already has a
-  `source: "web"` case; add a research step that populates `Contact` rows with
-  `source: "web"` before scoring.
-- **Background job queue**: document processing currently fires-and-forgets
-  (`processDocument(...).catch(...)`) from the upload API route, which is fine on a
-  long-running Node server (`next start`) but not on serverless platforms with short
-  request lifetimes. Swap in a real queue (BullMQ, a Postgres-backed job table, or your
-  host's background functions) for production serverless deployments.
+### 1. Real OCR for scanned/photographed rate cons — AWS Textract
+
+`src/lib/ocr/extractText.ts` reads the embedded text layer of born-digital PDFs directly
+for free. When `OCR_PROVIDER="aws-textract"` plus AWS credentials are set, images and
+scanned PDFs with no text layer route through Textract instead of being flagged for manual
+entry. Set in `.env`:
+
+```
+OCR_PROVIDER="aws-textract"
+AWS_REGION="us-east-1"
+AWS_ACCESS_KEY_ID="..."
+AWS_SECRET_ACCESS_KEY="..."
+```
+
+To swap in a different vendor (Google Document AI, Azure Form Recognizer, an LLM vision
+API), add a sibling file under `src/lib/ocr/providers/` returning the same `OcrResult`
+shape and branch on `OCR_PROVIDER` in `extractText.ts` — nothing downstream changes.
+
+### 2. Email inbox ingestion — auto-pull rate cons and replies (IMAP)
+
+`src/lib/email/imapClient.ts` polls a mailbox for unread mail. PDF/image attachments are
+run through the same upload+parse pipeline as a manual drag-and-drop; message bodies from
+senders that match a known contact/account are classified and logged as `Reply` rows
+automatically (same rules as the manual Replies page). Works with a Gmail "app password"
+or any IMAP provider, including Office 365:
+
+```
+IMAP_HOST="imap.gmail.com"
+IMAP_PORT="993"
+EMAIL_USER="you@megafleetcorp.com"
+EMAIL_PASSWORD="your-app-password"
+```
+
+Trigger it on a schedule by calling `GET /api/cron/poll-inbox` with a `CRON_SECRET` bearer
+token (every 5-15 minutes is reasonable) — see "Scheduling the cron routes" below.
+
+### 3. One-click outreach sending — SMTP
+
+`sendDraftAction` (`src/lib/actions/outreach.ts`) sends the approved draft for real over
+SMTP when configured, instead of just logging it as sent for manual copy/paste. If the
+send actually fails (bad credentials, etc.) the message is marked `FAILED` rather than
+silently claiming success. Reuses the same `EMAIL_USER`/`EMAIL_PASSWORD` as IMAP above:
+
+```
+SMTP_HOST="smtp.gmail.com"
+SMTP_PORT="587"
+EMAIL_FROM_NAME="Mike @ Mega Fleet Corp"
+EMAIL_FROM_ADDRESS="you@megafleetcorp.com"
+```
+
+### 4. Contact enrichment + shipping/logistics decision-maker detection — Apollo.io
+
+Click "Find Contacts" on any account's detail page to search Apollo.io for additional
+people at that company. `src/lib/enrichment/decisionMaker.ts` scores every result on
+seniority (VP/Director/Manager/Coordinator) and role relevance (logistics, shipping,
+supply chain, transportation, procurement, distribution, fleet, traffic, warehouse), and
+flags the single best match as the account's decision-maker (`Contact.isDecisionMaker`,
+shown as a green badge in the Contacts list and on the account page) — so it's obvious at
+a glance who to actually call instead of a flat list of names. This is a manual, explicit
+action per account (not automatic on every upload) so it doesn't silently spend Apollo
+credits. Get a key at https://developer.apollo.io/:
+
+```
+APOLLO_API_KEY="..."
+```
+
+### 5. Proactive daily digest — Slack and/or SMS
+
+Instead of having to open the dashboard to see what needs attention, `src/lib/alerts/dailyDigest.ts`
+composes a summary (follow-ups due, replies waiting, drafts ready to send, hot
+Interested/Quoting accounts) and posts it to a Slack channel and/or texts it via Twilio.
+Either, both, or neither can be configured:
+
+```
+SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..."
+TWILIO_ACCOUNT_SID="..."
+TWILIO_AUTH_TOKEN="..."
+TWILIO_FROM_NUMBER="+15551234567"
+ALERT_PHONE_NUMBER="+15557654321"
+```
+
+Trigger it on a schedule by calling `GET /api/cron/daily-digest` (once a day, e.g. weekday
+mornings) — see below.
+
+### Scheduling the cron routes
+
+`/api/cron/poll-inbox` and `/api/cron/daily-digest` are protected by a bearer-token check
+(`src/lib/cron/auth.ts`), not a login session, since they're meant to be called by a
+scheduler with nobody logged in. Set a random secret and call them with it:
+
+```
+CRON_SECRET="replace-with-openssl-rand-hex-32"
+```
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" https://yourapp.com/api/cron/poll-inbox
+curl -H "Authorization: Bearer $CRON_SECRET" https://yourapp.com/api/cron/daily-digest
+```
+
+Any scheduler works — Vercel Cron (`vercel.json`), an OS crontab running `curl`, GitHub
+Actions on a schedule, etc. Without `CRON_SECRET` set, both routes reject every request
+(fails closed, not open).
+
+### Still a known limitation (not addressed by the above)
+
+Document processing (both manual upload and inbox-ingested attachments) still fires and
+forgets a background promise from within the request handler
+(`processDocument(...).catch(...)`). That's fine on a long-running Node server (`next
+start`), but not reliable on serverless platforms with short request lifetimes. For a
+serverless deployment, swap this for a real queue (BullMQ, a Postgres-backed job table, or
+your host's background functions).
 
 ## Project structure
 

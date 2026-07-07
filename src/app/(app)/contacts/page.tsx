@@ -81,8 +81,13 @@ export default async function ContactsPage({
             {contacts.map((c) => (
               <Tr key={c.id}>
                 <Td>
-                  <Link href={`/contacts/${c.id}`} className="font-medium text-slate-800 hover:text-brand-600 dark:text-slate-200">
+                  <Link href={`/contacts/${c.id}`} className="inline-flex items-center gap-1.5 font-medium text-slate-800 hover:text-brand-600 dark:text-slate-200">
                     {c.fullName}
+                    {c.isDecisionMaker && (
+                      <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                        Decision-maker
+                      </span>
+                    )}
                   </Link>
                 </Td>
                 <Td>{c.title ?? "—"}</Td>
