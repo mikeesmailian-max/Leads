@@ -49,4 +49,7 @@ echo.
 echo ============================================
 echo  Done. Check the messages above for errors.
 echo  If it said "rejected" or "fetch first", run:
-echo    git pull origin 
+echo    git pull origin main --allow-unrelated-histories
+echo  then double-click this file again.
+echo ============================================
+pause
