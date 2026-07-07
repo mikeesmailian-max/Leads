@@ -1,0 +1,820 @@
+// ============================================================================
+// Mega Fleet Sales Prospecting & RC Intelligence Dashboard
+// Prisma schema — PostgreSQL
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// ENUMS
+// ----------------------------------------------------------------------------
+
+enum UserRole {
+  ADMIN
+  REP
+}
+
+enum AccountType {
+  SHIPPER
+  BROKER
+  CONSIGNEE
+  WAREHOUSE
+  FACILITY
+  CARRIER
+  PROSPECT
+  CUSTOMER
+  OTHER
+}
+
+enum PipelineStage {
+  NEW_FROM_UPLOAD
+  RESEARCHING
+  CONTACT_FOUND
+  DRAFT_READY
+  SENT
+  REPLIED
+  INTERESTED
+  QUOTING
+  CUSTOMER
+  WON
+  LOST
+  ARCHIVED
+}
+
+enum EquipmentType {
+  DRY_VAN
+  REEFER
+  FLATBED
+  OTHER
+}
+
+enum FacilityType {
+  WAREHOUSE
+  DISTRIBUTION_CENTER
+  PLANT
+  CROSS_DOCK
+  YARD
+  RETAIL
+  OTHER
+}
+
+enum DocumentType {
+  RATE_CONFIRMATION
+  BOL
+  INVOICE
+  CARRIER_PACKET
+  OTHER
+}
+
+enum DocumentStatus {
+  UPLOADED
+  PROCESSING
+  PARSED
+  NEEDS_REVIEW
+  APPROVED
+  ERROR
+}
+
+enum ContactStatus {
+  NEW
+  UNVERIFIED
+  VERIFIED
+  DRAFTED
+  EMAILED
+  REPLIED
+  INTERESTED
+  WRONG_CONTACT
+  DEAD
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  INVALID
+}
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskType {
+  REVIEW_UPLOAD
+  VERIFY_CONTACT
+  APPROVE_DRAFT
+  SEND_OUTREACH
+  FOLLOW_UP
+  CALL_ACCOUNT
+  RESEARCH_CONTACT
+  MOVE_TO_QUOTE
+  ARCHIVE_ACCOUNT
+  OTHER
+}
+
+enum DraftStyle {
+  COLD_INTRO
+  LANE_SPECIFIC
+  SIMILAR_FREIGHT
+  CAPACITY_SERVICE
+  FOLLOW_UP_NO_RESPONSE
+  WRONG_CONTACT_REROUTE
+  QUOTE_RESPONSE
+  RE_ENGAGEMENT
+}
+
+enum DraftLength {
+  SHORT
+  LONG
+}
+
+enum DraftStatus {
+  DRAFT
+  APPROVED
+  READY_TO_SEND
+  SENT
+  ARCHIVED
+}
+
+enum MessageDirection {
+  OUTBOUND
+  INBOUND
+}
+
+enum MessageStatus {
+  DRAFT
+  SENT
+  DELIVERED
+  BOUNCED
+  FAILED
+}
+
+enum ReplyCategory {
+  INTERESTED
+  NOT_INTERESTED
+  WRONG_CONTACT
+  SEND_RATES
+  SEND_CAPACITY
+  QUOTE_REQUEST
+  LATER
+  UNSUBSCRIBE
+  OUT_OF_OFFICE
+  UNKNOWN
+}
+
+enum ActivityType {
+  CREATED
+  UPDATED
+  STAGE_CHANGED
+  UPLOAD_PARSED
+  ACCOUNT_MATCHED
+  ACCOUNT_MERGED
+  CONTACT_DISCOVERED
+  CONTACT_VERIFIED
+  DRAFT_GENERATED
+  DRAFT_APPROVED
+  TASK_CREATED
+  TASK_COMPLETED
+  EMAIL_SENT
+  REPLY_RECEIVED
+  REPLY_CLASSIFIED
+  NOTE_ADDED
+}
+
+// ----------------------------------------------------------------------------
+// USERS / AUTH
+// ----------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(REP)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  ownedAccounts      Account[]       @relation("AccountOwner")
+  ownedContacts      Contact[]       @relation("ContactOwner")
+  ownedOpportunities Opportunity[]   @relation("OpportunityOwner")
+  ownedTasks         Task[]          @relation("TaskOwner")
+  uploadedDocuments  Document[]      @relation("DocumentUploader")
+  notes              Note[]          @relation("NoteAuthor")
+  activities         Activity[]      @relation("ActivityActor")
+  stageChanges       StageHistory[]  @relation("StageChanger")
+  draftsCreated      OutreachDraft[] @relation("DraftCreator")
+  repliesClassified  Reply[]         @relation("ReplyClassifier")
+
+  @@index([email])
+}
+
+// ----------------------------------------------------------------------------
+// ACCOUNTS (companies)
+// ----------------------------------------------------------------------------
+
+model Account {
+  id               String         @id @default(cuid())
+  name             String
+  normalizedName   String
+  website          String?
+  domain           String?
+  type             AccountType    @default(PROSPECT)
+  industry         String?
+  region           String?
+  equipmentFocus   EquipmentType?
+  internalNotes    String?
+  source           String? // e.g. "Uploaded document", "Manual entry"
+  sourceDocumentId String?
+  pipelineStage    PipelineStage  @default(NEW_FROM_UPLOAD)
+  firstSeenAt      DateTime       @default(now())
+  lastActivityAt   DateTime       @default(now())
+  ownerId          String?
+  deletedAt        DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  owner               User?             @relation("AccountOwner", fields: [ownerId], references: [id])
+  sourceDocument      Document?         @relation("AccountSourceDocument", fields: [sourceDocumentId], references: [id])
+  contacts            Contact[]
+  facilities          Facility[]
+  opportunities       Opportunity[]
+  tasks               Task[]
+  notes               Note[]
+  activities          Activity[]
+  tags                AccountTag[]
+  outreachDrafts      OutreachDraft[]
+  outreachMessages    OutreachMessage[]
+  emailThreads        EmailThread[]
+  replies             Reply[]
+  laneLinks           LaneAccount[]
+  parsesAsShipper     DocumentParse[]   @relation("ParseShipperAccount")
+  parsesAsBroker      DocumentParse[]   @relation("ParseBrokerAccount")
+  parsesAsConsignee   DocumentParse[]   @relation("ParseConsigneeAccount")
+  mergedFromAccounts  AccountMerge[]    @relation("MergeTargetAccount")
+  mergedIntoAccountOf AccountMerge[]    @relation("MergeSourceAccount")
+
+  @@index([normalizedName])
+  @@index([domain])
+  @@index([pipelineStage])
+  @@index([type])
+  @@index([deletedAt])
+}
+
+/// Audit trail of account merges (dedupe workflow)
+model AccountMerge {
+  id              String   @id @default(cuid())
+  targetAccountId String
+  sourceAccountId String
+  mergedById      String?
+  reason          String?
+  createdAt       DateTime @default(now())
+
+  targetAccount Account @relation("MergeTargetAccount", fields: [targetAccountId], references: [id])
+  sourceAccount Account @relation("MergeSourceAccount", fields: [sourceAccountId], references: [id])
+
+  @@index([targetAccountId])
+  @@index([sourceAccountId])
+}
+
+// ----------------------------------------------------------------------------
+// FACILITIES
+// ----------------------------------------------------------------------------
+
+model Facility {
+  id            String       @id @default(cuid())
+  name          String
+  accountId     String?
+  facilityType  FacilityType @default(OTHER)
+  addressLine1  String?
+  city          String?
+  state         String?
+  zip           String?
+  internalNotes String?
+  volumeClues   String?
+  deletedAt     DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  account        Account?        @relation(fields: [accountId], references: [id])
+  contacts       Contact[]
+  laneLinks      LaneFacility[]
+  tasks          Task[]
+  notes          Note[]
+  activities     Activity[]
+  pickupParses   DocumentParse[] @relation("ParsePickupFacility")
+  deliveryParses DocumentParse[] @relation("ParseDeliveryFacility")
+
+  @@index([accountId])
+  @@index([city, state])
+}
+
+// ----------------------------------------------------------------------------
+// LANES
+// ----------------------------------------------------------------------------
+
+model Lane {
+  id             String         @id @default(cuid())
+  label          String
+  originCity     String?
+  originState    String?
+  destCity       String?
+  destState      String?
+  equipmentType  EquipmentType?
+  commodityClues String?
+  frequencyCount Int            @default(0)
+  suggestedAngle String?
+  deletedAt      DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  accounts       LaneAccount[]
+  facilities     LaneFacility[]
+  opportunities  Opportunity[]
+  tasks          Task[]
+  notes          Note[]
+  activities     Activity[]
+  documentParses DocumentParse[]
+  outreachDrafts OutreachDraft[]
+
+  @@index([originCity, originState])
+  @@index([destCity, destState])
+  @@index([equipmentType])
+}
+
+model LaneAccount {
+  laneId    String
+  accountId String
+  createdAt DateTime @default(now())
+
+  lane    Lane    @relation(fields: [laneId], references: [id])
+  account Account @relation(fields: [accountId], references: [id])
+
+  @@id([laneId, accountId])
+}
+
+model LaneFacility {
+  laneId     String
+  facilityId String
+  createdAt  DateTime @default(now())
+
+  lane     Lane     @relation(fields: [laneId], references: [id])
+  facility Facility @relation(fields: [facilityId], references: [id])
+
+  @@id([laneId, facilityId])
+}
+
+// ----------------------------------------------------------------------------
+// DOCUMENTS / OCR PIPELINE
+// ----------------------------------------------------------------------------
+
+model Document {
+  id               String         @id @default(cuid())
+  originalFilename String
+  storedPath       String
+  mimeType         String?
+  fileSizeBytes    Int?
+  documentType     DocumentType   @default(RATE_CONFIRMATION)
+  status           DocumentStatus @default(UPLOADED)
+  ocrText          String?
+  ocrConfidence    Float?
+  needsReview      Boolean        @default(true)
+  errorMessage     String?
+  uploadedById     String?
+  deletedAt        DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  uploadedBy      User?          @relation("DocumentUploader", fields: [uploadedById], references: [id])
+  parse           DocumentParse?
+  sourcedAccounts Account[]      @relation("AccountSourceDocument")
+  tasks           Task[]
+  notes           Note[]
+  activities      Activity[]
+
+  @@index([status])
+  @@index([documentType])
+  @@index([createdAt])
+}
+
+model DocumentParse {
+  id         String @id @default(cuid())
+  documentId String @unique
+
+  brokerName         String?
+  shipperName        String?
+  consigneeName      String?
+  brokerAccountId    String?
+  shipperAccountId   String?
+  consigneeAccountId String?
+
+  pickupAddress    String?
+  pickupCity       String?
+  pickupState      String?
+  pickupZip        String?
+  pickupFacilityId String?
+  pickupDate       DateTime?
+  pickupTime       String?
+
+  deliveryAddress    String?
+  deliveryCity       String?
+  deliveryState      String?
+  deliveryZip        String?
+  deliveryFacilityId String?
+  deliveryDate       DateTime?
+  deliveryTime       String?
+
+  laneId String?
+
+  commodity       String?
+  equipmentType   EquipmentType?
+  linehaulAmount  Decimal?       @db.Decimal(10, 2)
+  referenceNumber String?
+  loadNumber      String?
+  mcNumber        String?
+  dotNumber       String?
+
+  extractedContacts Json? // [{name, title, phone, email}]
+  extractedPhones   Json? // [string]
+  extractedEmails   Json? // [string]
+
+  confidenceScore Float?    @default(0)
+  fieldConfidence Json? // per-field confidence map
+  isApproved      Boolean   @default(false)
+  reviewedById    String?
+  reviewedAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  document         Document  @relation(fields: [documentId], references: [id])
+  brokerAccount    Account?  @relation("ParseBrokerAccount", fields: [brokerAccountId], references: [id])
+  shipperAccount   Account?  @relation("ParseShipperAccount", fields: [shipperAccountId], references: [id])
+  consigneeAccount Account?  @relation("ParseConsigneeAccount", fields: [consigneeAccountId], references: [id])
+  pickupFacility   Facility? @relation("ParsePickupFacility", fields: [pickupFacilityId], references: [id])
+  deliveryFacility Facility? @relation("ParseDeliveryFacility", fields: [deliveryFacilityId], references: [id])
+  lane             Lane?     @relation(fields: [laneId], references: [id])
+
+  @@index([isApproved])
+}
+
+// ----------------------------------------------------------------------------
+// CONTACTS
+// ----------------------------------------------------------------------------
+
+model Contact {
+  id                 String             @id @default(cuid())
+  accountId          String?
+  facilityId         String?
+  firstName          String?
+  lastName           String?
+  fullName           String
+  title              String?
+  department         String?
+  email              String?
+  phone              String?
+  linkedinUrl        String?
+  confidenceScore    Float              @default(0)
+  status             ContactStatus      @default(NEW)
+  verificationStatus VerificationStatus @default(UNVERIFIED)
+  outreachStatus     String? // free-form label for last outreach state
+  source             String? // "document", "manual", "inferred"
+  sourceDocumentId   String?
+  doNotContact       Boolean            @default(false)
+  internalNotes      String?
+  lastContactedAt    DateTime?
+  ownerId            String?
+  deletedAt          DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  account          Account?          @relation(fields: [accountId], references: [id])
+  facility         Facility?         @relation(fields: [facilityId], references: [id])
+  owner            User?             @relation("ContactOwner", fields: [ownerId], references: [id])
+  tags             ContactTag[]
+  tasks            Task[]
+  notes            Note[]
+  activities       Activity[]
+  opportunities    Opportunity[]
+  outreachDrafts   OutreachDraft[]
+  outreachMessages OutreachMessage[]
+  emailThreads     EmailThread[]
+  replies          Reply[]
+
+  @@index([accountId])
+  @@index([status])
+  @@index([confidenceScore])
+  @@index([verificationStatus])
+  @@index([deletedAt])
+}
+
+// ----------------------------------------------------------------------------
+// OPPORTUNITIES / PIPELINE
+// ----------------------------------------------------------------------------
+
+model Opportunity {
+  id               String        @id @default(cuid())
+  accountId        String
+  contactId        String?
+  laneId           String?
+  stage            PipelineStage @default(NEW_FROM_UPLOAD)
+  urgency          TaskPriority  @default(MEDIUM)
+  ownerId          String?
+  lostReason       String?
+  sourceDocumentId String?
+  deletedAt        DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  account      Account        @relation(fields: [accountId], references: [id])
+  contact      Contact?       @relation(fields: [contactId], references: [id])
+  lane         Lane?          @relation(fields: [laneId], references: [id])
+  owner        User?          @relation("OpportunityOwner", fields: [ownerId], references: [id])
+  tasks        Task[]
+  notes        Note[]
+  activities   Activity[]
+  stageHistory StageHistory[]
+
+  @@index([stage])
+  @@index([accountId])
+  @@index([deletedAt])
+}
+
+model StageHistory {
+  id            String         @id @default(cuid())
+  opportunityId String
+  fromStage     PipelineStage?
+  toStage       PipelineStage
+  changedById   String?
+  note          String?
+  changedAt     DateTime       @default(now())
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id])
+  changedBy   User?       @relation("StageChanger", fields: [changedById], references: [id])
+
+  @@index([opportunityId])
+}
+
+// ----------------------------------------------------------------------------
+// OUTREACH
+// ----------------------------------------------------------------------------
+
+model OutreachDraft {
+  id           String      @id @default(cuid())
+  accountId    String
+  contactId    String?
+  laneId       String?
+  style        DraftStyle
+  length       DraftLength @default(SHORT)
+  versionLabel String      @default("A")
+  subject      String
+  body         String
+  status       DraftStatus @default(DRAFT)
+  factsUsed    Json? // facts pulled from DB used to generate this draft (for auditability/no-fabrication)
+  createdById  String?
+  deletedAt    DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  account   Account           @relation(fields: [accountId], references: [id])
+  contact   Contact?          @relation(fields: [contactId], references: [id])
+  lane      Lane?             @relation(fields: [laneId], references: [id])
+  createdBy User?             @relation("DraftCreator", fields: [createdById], references: [id])
+  messages  OutreachMessage[]
+
+  @@index([accountId])
+  @@index([status])
+}
+
+model OutreachMessage {
+  id            String           @id @default(cuid())
+  draftId       String?
+  accountId     String
+  contactId     String?
+  emailThreadId String?
+  direction     MessageDirection @default(OUTBOUND)
+  subject       String?
+  body          String?
+  status        MessageStatus    @default(DRAFT)
+  sentAt        DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  draft       OutreachDraft? @relation(fields: [draftId], references: [id])
+  account     Account        @relation(fields: [accountId], references: [id])
+  contact     Contact?       @relation(fields: [contactId], references: [id])
+  emailThread EmailThread?   @relation(fields: [emailThreadId], references: [id])
+
+  @@index([accountId])
+  @@index([status])
+}
+
+model EmailThread {
+  id        String   @id @default(cuid())
+  accountId String
+  contactId String?
+  subject   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  account  Account           @relation(fields: [accountId], references: [id])
+  contact  Contact?          @relation(fields: [contactId], references: [id])
+  messages OutreachMessage[]
+  replies  Reply[]
+
+  @@index([accountId])
+}
+
+model Reply {
+  id                  String        @id @default(cuid())
+  emailThreadId       String?
+  accountId           String?
+  contactId           String?
+  rawText             String
+  category            ReplyCategory @default(UNKNOWN)
+  suggestedNextAction String?
+  receivedAt          DateTime      @default(now())
+  classifiedById      String?
+  createdAt           DateTime      @default(now())
+
+  emailThread  EmailThread? @relation(fields: [emailThreadId], references: [id])
+  account      Account?     @relation(fields: [accountId], references: [id])
+  contact      Contact?     @relation(fields: [contactId], references: [id])
+  classifiedBy User?        @relation("ReplyClassifier", fields: [classifiedById], references: [id])
+
+  @@index([category])
+  @@index([accountId])
+}
+
+// ----------------------------------------------------------------------------
+// TASKS
+// ----------------------------------------------------------------------------
+
+model Task {
+  id            String       @id @default(cuid())
+  title         String
+  description   String?
+  taskType      TaskType     @default(OTHER)
+  status        TaskStatus   @default(OPEN)
+  priority      TaskPriority @default(MEDIUM)
+  dueDate       DateTime?
+  completedAt   DateTime?
+  accountId     String?
+  contactId     String?
+  laneId        String?
+  documentId    String?
+  opportunityId String?
+  ownerId       String?
+  deletedAt     DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  account     Account?     @relation(fields: [accountId], references: [id])
+  contact     Contact?     @relation(fields: [contactId], references: [id])
+  lane        Lane?        @relation(fields: [laneId], references: [id])
+  document    Document?    @relation(fields: [documentId], references: [id])
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id])
+  owner       User?        @relation("TaskOwner", fields: [ownerId], references: [id])
+  Facility    Facility?    @relation(fields: [facilityId], references: [id])
+  facilityId  String?
+
+  @@index([status])
+  @@index([dueDate])
+  @@index([priority])
+  @@index([ownerId])
+}
+
+// ----------------------------------------------------------------------------
+// NOTES / ACTIVITY TIMELINE (polymorphic via nullable FKs)
+// ----------------------------------------------------------------------------
+
+model Note {
+  id            String   @id @default(cuid())
+  body          String
+  accountId     String?
+  contactId     String?
+  laneId        String?
+  facilityId    String?
+  documentId    String?
+  opportunityId String?
+  authorId      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  account     Account?     @relation(fields: [accountId], references: [id])
+  contact     Contact?     @relation(fields: [contactId], references: [id])
+  lane        Lane?        @relation(fields: [laneId], references: [id])
+  facility    Facility?    @relation(fields: [facilityId], references: [id])
+  document    Document?    @relation(fields: [documentId], references: [id])
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id])
+  author      User?        @relation("NoteAuthor", fields: [authorId], references: [id])
+
+  @@index([accountId])
+  @@index([contactId])
+}
+
+model Activity {
+  id            String       @id @default(cuid())
+  type          ActivityType
+  summary       String
+  metadata      Json?
+  accountId     String?
+  contactId     String?
+  laneId        String?
+  facilityId    String?
+  documentId    String?
+  opportunityId String?
+  actorId       String?
+  createdAt     DateTime     @default(now())
+
+  account     Account?     @relation(fields: [accountId], references: [id])
+  contact     Contact?     @relation(fields: [contactId], references: [id])
+  lane        Lane?        @relation(fields: [laneId], references: [id])
+  facility    Facility?    @relation(fields: [facilityId], references: [id])
+  document    Document?    @relation(fields: [documentId], references: [id])
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id])
+  actor       User?        @relation("ActivityActor", fields: [actorId], references: [id])
+
+  @@index([accountId])
+  @@index([contactId])
+  @@index([createdAt])
+}
+
+// ----------------------------------------------------------------------------
+// TAGS
+// ----------------------------------------------------------------------------
+
+model Tag {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  color     String   @default("#64748b")
+  createdAt DateTime @default(now())
+
+  accounts AccountTag[]
+  contacts ContactTag[]
+}
+
+model AccountTag {
+  accountId String
+  tagId     String
+  createdAt DateTime @default(now())
+
+  account Account @relation(fields: [accountId], references: [id])
+  tag     Tag     @relation(fields: [tagId], references: [id])
+
+  @@id([accountId, tagId])
+}
+
+model ContactTag {
+  contactId String
+  tagId     String
+  createdAt DateTime @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id])
+  tag     Tag     @relation(fields: [tagId], references: [id])
+
+  @@id([contactId, tagId])
+}
+
+// ----------------------------------------------------------------------------
+// SETTINGS (key/value config: scoring weights, OCR settings, doc type defs,
+// task rules, signature templates, company profile)
+// ----------------------------------------------------------------------------
+
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
+model OutreachTemplate {
+  id              String     @id @default(cuid())
+  style           DraftStyle
+  name            String
+  subjectTemplate String
+  bodyTemplate    String
+  tone            String?    @default("concise, professional, confident")
+  isDefault       Boolean    @default(true)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([style])
+}
